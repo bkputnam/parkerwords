@@ -58,9 +58,10 @@ fn winnow(
             print_solution(current_solution, global_data);
             continue;
         }
-        global_data.filter(|word_bits, index| {
-            (index > cursor_index) && (word_bits & cursor_bits == 0)
-        });
+        // global_data.filter_data(|word_bits, index| {
+        //     (index > cursor_index) && (word_bits & cursor_bits == 0)
+        // });
+        global_data.filter_bkp(cursor_index, cursor_bits);
         winnow(global_data, current_solution, depth + 1, output);
         global_data.undo_last_filter();
     }

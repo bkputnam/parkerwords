@@ -1,16 +1,16 @@
 #[derive(Debug)]
-pub struct FilterableLinkedList<T: Copy> {
-    pub items: Vec<T>,
+pub struct FilterableLinkedList {
+    pub items: Vec<u32>,
     pub first_index: Option<usize>,
     last_index: Option<usize>,
     pub next_indices: Vec<Option<usize>>,
     prev_indices: Vec<Option<usize>>,
-    undo_frames: Vec<Vec<usize>>,
+    undo_frames: Vec<Option<usize>>,
     len: usize,
 }
 
-impl<T: Copy> FilterableLinkedList<T> {
-    pub fn new(items: Vec<T>) -> FilterableLinkedList<T> {
+impl FilterableLinkedList {
+    pub fn new(items: Vec<u32>) -> FilterableLinkedList {
         let len = items.len();
         let mut next_indices: Vec<Option<usize>> = Vec::with_capacity(len);
         let mut prev_indices: Vec<Option<usize>> = Vec::with_capacity(len);
@@ -26,7 +26,7 @@ impl<T: Copy> FilterableLinkedList<T> {
             last_index,
             next_indices,
             prev_indices,
-            undo_frames: vec![],
+            undo_frames: Vec::with_capacity(len * 2),
             len,
         }
     }
@@ -39,13 +39,14 @@ impl<T: Copy> FilterableLinkedList<T> {
      * Returns the value at the given index in the original data, without regard
      * to whether or not it's currently filtered from the list.
      */
-    pub fn get_at_unfiltered_index(&self, index: usize) -> T {
+    pub fn get_at_unfiltered_index(&self, index: usize) -> u32 {
         self.items[index]
     }
 
-    pub fn filter<F: Fn(T, usize) -> bool>(&mut self, check_item: F) {
-        let mut undo_frame: Vec<usize> = vec![];
+    #[allow(dead_code)]
+    pub fn filter<F: Fn(u32, usize) -> bool>(&mut self, check_item: F) {
         let mut cursor = self.first_index;
+        self.undo_frames.push(None);
         while let Some(cursor_index) = cursor {
             cursor = self.next_indices[cursor_index];
             if !check_item(self.items[cursor_index], cursor_index) {
@@ -61,65 +62,86 @@ impl<T: Copy> FilterableLinkedList<T> {
                 } else {
                     self.last_index = old_prev;
                 }
-                undo_frame.push(cursor_index);
+                self.undo_frames.push(Some(cursor_index));
                 self.len -= 1;
             }
         }
-        self.undo_frames.push(undo_frame);
     }
 
-    pub fn undo_last_filter(&mut self) {
-        if let Some(mut undo_frame) = self.undo_frames.pop() {
-            // I'm not sure if we need to undo every change in reverse order,
-            // but it seems like it can't hurt.
-            while let Some(index) = undo_frame.pop() {
-                let old_prev_opt = self.prev_indices[index];
-                let old_next_opt = self.next_indices[index];
-                if let Some(old_prev) = old_prev_opt {
-                    self.next_indices[old_prev] = Some(index);
+    #[allow(dead_code)]
+    pub fn filter_bkp(&mut self, min_index: usize, word_bits: u32) {
+        let mut cursor = self.first_index;
+        self.undo_frames.push(None);
+        while let Some(cursor_index) = cursor {
+            cursor = self.next_indices[cursor_index];
+            // if !check_item(self.items[cursor_index], cursor_index) {
+            if !((cursor_index > min_index) && (self.items[cursor_index] & word_bits == 0)) {
+                let old_prev = self.prev_indices[cursor_index];
+                let old_next = self.next_indices[cursor_index];
+                if let Some(old_prev_index) = old_prev {
+                    self.next_indices[old_prev_index] = old_next;
                 } else {
-                    self.first_index = Some(index);
+                    self.first_index = old_next;
                 }
-                if let Some(old_next) = old_next_opt {
-                    self.prev_indices[old_next] = Some(index);
+                if let Some(old_next_index) = old_next {
+                    self.prev_indices[old_next_index] = old_prev;
                 } else {
-                    self.last_index = Some(index);
+                    self.last_index = old_prev;
                 }
-                self.len += 1;
+                self.undo_frames.push(Some(cursor_index));
+                self.len -= 1;
             }
         }
     }
 
-    pub fn first<'a>(&'a self) -> Option<&'a T> {
-        match self.first_index {
-            Some(index) => Some(&self.items[index]),
-            None => None,
+    pub fn undo_last_filter(&mut self) {
+        while let Some(Some(index)) = self.undo_frames.pop() {
+            let old_prev_opt = self.prev_indices[index];
+            let old_next_opt = self.next_indices[index];
+            if let Some(old_prev) = old_prev_opt {
+                self.next_indices[old_prev] = Some(index);
+            } else {
+                self.first_index = Some(index);
+            }
+            if let Some(old_next) = old_next_opt {
+                self.prev_indices[old_next] = Some(index);
+            } else {
+                self.last_index = Some(index);
+            }
+            self.len += 1;
         }
     }
 
-    pub fn iter_with_original_indices<'a>(&'a self) -> IndexIter<'a, T> {
-        IndexIter::new(self)
-    }
+    // pub fn first<'a>(&'a self) -> Option<&'a T> {
+    //     match self.first_index {
+    //         Some(index) => Some(&self.items[index]),
+    //         None => None,
+    //     }
+    // }
+
+    // pub fn iter_with_original_indices<'a>(&'a self) -> IndexIter<'a, T> {
+    //     IndexIter::new(self)
+    // }
 }
 
-impl<'a, T: Copy> IntoIterator for &'a FilterableLinkedList<T> {
-    type Item = T;
-    type IntoIter = FilterableLinkedListIterator<'a, T>;
+impl<'a> IntoIterator for &'a FilterableLinkedList {
+    type Item = u32;
+    type IntoIter = FilterableLinkedListIterator<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         FilterableLinkedListIterator::new(self)
     }
 }
 
-pub struct FilterableLinkedListIterator<'a, T: Copy> {
-    source: &'a FilterableLinkedList<T>,
+pub struct FilterableLinkedListIterator<'a> {
+    source: &'a FilterableLinkedList,
     cursor: Option<usize>,
 }
 
-impl<'a, T: Copy> FilterableLinkedListIterator<'a, T> {
+impl<'a> FilterableLinkedListIterator<'a> {
     pub fn new(
-        source: &'a FilterableLinkedList<T>,
-    ) -> FilterableLinkedListIterator<'a, T> {
+        source: &'a FilterableLinkedList,
+    ) -> FilterableLinkedListIterator<'a> {
         FilterableLinkedListIterator {
             source,
             cursor: source.first_index,
@@ -127,10 +149,10 @@ impl<'a, T: Copy> FilterableLinkedListIterator<'a, T> {
     }
 }
 
-impl<'a, T: Copy> Iterator for FilterableLinkedListIterator<'a, T> {
-    type Item = T;
+impl<'a> Iterator for FilterableLinkedListIterator<'a> {
+    type Item = u32;
 
-    fn next(&mut self) -> Option<T> {
+    fn next(&mut self) -> Option<u32> {
         match self.cursor {
             Some(index) => {
                 let result = self.source.items[index];
@@ -142,34 +164,34 @@ impl<'a, T: Copy> Iterator for FilterableLinkedListIterator<'a, T> {
     }
 }
 
-pub struct IndexIter<'a, T: Copy> {
-    source: &'a FilterableLinkedList<T>,
-    cursor: Option<usize>,
-}
+// pub struct IndexIter<'a> {
+//     source: &'a FilterableLinkedList,
+//     cursor: Option<usize>,
+// }
 
-impl<'a, T: Copy> IndexIter<'a, T> {
-    pub fn new(source: &'a FilterableLinkedList<T>) -> IndexIter<'a, T> {
-        IndexIter {
-            source,
-            cursor: source.first_index,
-        }
-    }
-}
+// impl<'a> IndexIter<'a> {
+//     pub fn new(source: &'a FilterableLinkedList) -> IndexIter<'a> {
+//         IndexIter {
+//             source,
+//             cursor: source.first_index,
+//         }
+//     }
+// }
 
-impl<'a, T: Copy> Iterator for IndexIter<'a, T> {
-    type Item = (usize, &'a T);
+// impl<'a> Iterator for IndexIter<'a> {
+//     type Item = (usize, &'a T);
 
-    fn next(&mut self) -> Option<(usize, &'a T)> {
-        match self.cursor {
-            Some(index) => {
-                let result = &self.source.items[index];
-                self.cursor = self.source.next_indices[index];
-                Some((index, result))
-            }
-            None => None,
-        }
-    }
-}
+//     fn next(&mut self) -> Option<(usize, &'a T)> {
+//         match self.cursor {
+//             Some(index) => {
+//                 let result = &self.source.items[index];
+//                 self.cursor = self.source.next_indices[index];
+//                 Some((index, result))
+//             }
+//             None => None,
+//         }
+//     }
+// }
 
 #[cfg(test)]
 mod tests {

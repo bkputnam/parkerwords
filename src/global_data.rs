@@ -1,4 +1,4 @@
-use std::{array, collections::HashSet};
+use std::{collections::HashSet};
 
 use crate::{
     filterable_linked_list::FilterableLinkedList, read_words::read_words,
@@ -9,8 +9,7 @@ pub type Solution<'a> = [&'a str; 5];
 
 pub struct GlobalData {
     pub words: Vec<String>,
-    pub word_bits: FilterableLinkedList<u32>,
-    pub filters: [FilterableLinkedList<usize>; 26],
+    pub word_bits: FilterableLinkedList,
 }
 
 impl GlobalData {
@@ -18,44 +17,33 @@ impl GlobalData {
         let mut words: Vec<String> = Vec::new();
         let mut word_bits: Vec<u32> = Vec::new();
         let mut seen_words: HashSet<u32> = HashSet::new();
-        let mut filters: [Vec<usize>; 26] =
-            array::from_fn(|_: usize| Vec::new());
         for word in read_words().into_iter() {
             let bits = word_to_bits(&word);
             if bits.count_ones() == 5 && !seen_words.contains(&bits) {
                 seen_words.insert(bits);
                 words.push(word);
                 word_bits.push(bits);
-
-                let word_index = word_bits.len() - 1;
-                for bit_index in bit_indices(bits) {
-                    filters[bit_index].push(word_index)
-                }
             }
         }
 
         GlobalData {
             words,
             word_bits: FilterableLinkedList::new(word_bits),
-            filters: filters.map(|filter| FilterableLinkedList::new(filter)),
         }
     }
 
-    pub fn filter<F: Fn(u32, usize) -> bool>(&mut self, check_item: F) {
+    #[allow(dead_code)]
+    pub fn filter_data<F: Fn(u32, usize) -> bool>(&mut self, check_item: F) {
         self.word_bits.filter(&check_item);
-        for filter in self.filters.iter_mut() {
-            filter.filter(|index, _| {
-                let bits = self.word_bits.get_at_unfiltered_index(index);
-                check_item(bits, index)
-            })
-        }
+    }
+
+    #[allow(dead_code)]
+    pub fn filter_bkp(&mut self, min_index: usize, word_bits: u32) {
+        self.word_bits.filter_bkp(min_index, word_bits);
     }
 
     pub fn undo_last_filter(&mut self) {
         self.word_bits.undo_last_filter();
-        for filter in self.filters.iter_mut() {
-            filter.undo_last_filter();
-        }
     }
 
     pub fn solution_indicies_to_str<'a>(
@@ -74,17 +62,6 @@ fn word_to_bits(word: &str) -> u32 {
     for byte in word.as_bytes().iter() {
         let letter_index = byte - a_byte;
         result |= 1u32 << letter_index;
-    }
-    result
-}
-
-fn bit_indices(bits: u32) -> Vec<usize> {
-    let mut result: Vec<usize> = Vec::new();
-    let mut bits_copy = bits;
-    while bits_copy != 0 {
-        let index = bits_copy.trailing_zeros();
-        bits_copy ^= 1 << index;
-        result.push(index as usize);
     }
     result
 }
