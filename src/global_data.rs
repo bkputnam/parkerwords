@@ -1,56 +1,63 @@
-use std::{collections::HashSet};
+use crate::read_words::read_words;
+use std::collections::HashMap;
 
-use crate::{
-    filterable_linked_list::FilterableLinkedList, read_words::read_words,
-};
-
-pub type SolutionIndices = [usize; 5];
+pub type SolutionBits = [u32; 5];
 pub type Solution<'a> = [&'a str; 5];
 
 pub struct GlobalData {
-    pub words: Vec<String>,
-    pub word_bits: FilterableLinkedList,
+    pub word_bits: Vec<u32>,
+    pub words_by_bits: HashMap<u32, Vec<String>>,
 }
 
 impl GlobalData {
     pub fn new() -> GlobalData {
-        let mut words: Vec<String> = Vec::new();
-        let mut word_bits: Vec<u32> = Vec::new();
-        let mut seen_words: HashSet<u32> = HashSet::new();
+        let mut word_bits: Vec<u32> = vec![];
+        let mut words_by_bits: HashMap<u32, Vec<String>> = HashMap::new();
         for word in read_words().into_iter() {
             let bits = word_to_bits(&word);
-            if bits.count_ones() == 5 && !seen_words.contains(&bits) {
-                seen_words.insert(bits);
+            if bits.count_ones() != 5 {
+                continue;
+            }
+            if let Some(words) = words_by_bits.get_mut(&bits) {
                 words.push(word);
+            } else {
                 word_bits.push(bits);
+                words_by_bits.insert(bits, vec![word]);
             }
         }
 
         GlobalData {
-            words,
-            word_bits: FilterableLinkedList::new(word_bits),
+            word_bits,
+            words_by_bits,
         }
     }
 
-    #[allow(dead_code)]
-    pub fn filter_data<F: Fn(u32, usize) -> bool>(&mut self, check_item: F) {
-        self.word_bits.filter(&check_item);
-    }
-
-    #[allow(dead_code)]
-    pub fn filter_bkp(&mut self, min_index: usize, word_bits: u32) {
-        self.word_bits.filter_bkp(min_index, word_bits);
-    }
-
-    pub fn undo_last_filter(&mut self) {
-        self.word_bits.undo_last_filter();
-    }
-
-    pub fn solution_indicies_to_str<'a>(
+    pub fn solution_indicies_to_strs<'a>(
         &'a self,
-        indicies: &SolutionIndices,
-    ) -> Solution<'a> {
-        indicies.map(|index| self.words[index].as_str())
+        bits: &SolutionBits,
+    ) -> Vec<Solution<'a>> {
+        // let mut result: Vec<Solution<'a>> = vec![];
+        // for word_0 in self.words_by_bits.get(&indicies[0]).unwrap() {
+        //     for word_1 in self.words_by_bits.get(&indicies[1]).unwrap() {
+        //         for word_2 in self.words_by_bits.get(&indicies[2]).unwrap() {
+        //             for word_3 in self.words_by_bits.get(&indicies[3]).unwrap()
+        //             {
+        //                 for word_4 in
+        //                     self.words_by_bits.get(&indicies[4]).unwrap()
+        //                 {
+        //                     result
+        //                         .push([word_0, word_1, word_2, word_3, word_4]);
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+        // result
+
+        let lone_result = bits.map(|word_bits| {
+            self.words_by_bits.get(&word_bits).unwrap()[0].as_ref()
+        });
+        vec![lone_result]
     }
 }
 
@@ -70,8 +77,6 @@ fn word_to_bits(word: &str) -> u32 {
 mod tests {
     use crate::global_data::word_to_bits;
 
-    use super::bit_indices;
-
     #[test]
     fn test_word_to_bits_1() {
         assert_eq!(word_to_bits("A"), 1);
@@ -85,17 +90,5 @@ mod tests {
     #[test]
     fn test_word_to_bits_3() {
         assert_eq!(word_to_bits("ABCDE"), 31);
-    }
-
-    #[test]
-    fn test_bit_indicies() {
-        let bits: u32 = 0b10010111;
-        let bit_is = bit_indices(bits);
-        assert_eq!(bit_is.len(), 5);
-        assert_eq!(bit_is[0], 0);
-        assert_eq!(bit_is[1], 1);
-        assert_eq!(bit_is[2], 2);
-        assert_eq!(bit_is[3], 4);
-        assert_eq!(bit_is[4], 7);
     }
 }

@@ -1,68 +1,73 @@
-mod filterable_linked_list;
 mod global_data;
 mod read_words;
 
-use global_data::{GlobalData, SolutionIndices};
+use global_data::{GlobalData, SolutionBits};
+use rayon::prelude::*;
+
+type Word = (usize, u32);
 
 fn main() {
-    let mut global_data = GlobalData::new();
-    let mut output: Vec<SolutionIndices> = vec![];
+    let global_data = GlobalData::new();
 
-    winnow(
-        &mut global_data,
-        /* currentSolution= */
-        &mut [0, 0, 0, 0, 0],
-        /* depth= */ 0,
-        &mut output,
+    let indexed_word_bits: Vec<Word> =
+        global_data.word_bits.iter().copied().enumerate().collect();
+
+    let solution_bits: Vec<SolutionBits> = indexed_word_bits
+        .par_iter()
+        .flat_map(|word_0: &Word| -> Vec<SolutionBits> {
+            let mut filtered_1: Vec<Word> =
+                Vec::with_capacity(global_data.word_bits.len());
+            let mut filtered_2: Vec<Word> =
+                Vec::with_capacity(global_data.word_bits.len());
+            let mut filtered_3: Vec<Word> =
+                Vec::with_capacity(global_data.word_bits.len());
+            let mut filtered_4: Vec<Word> =
+                Vec::with_capacity(global_data.word_bits.len());
+
+            let mut result: Vec<SolutionBits> = vec![];
+            filter(word_0, &indexed_word_bits, &mut filtered_1);
+            for word_1 in &filtered_1 {
+                filter(word_1, &filtered_1, &mut filtered_2);
+                for word_2 in &filtered_2 {
+                    filter(word_2, &filtered_2, &mut filtered_3);
+                    for word_3 in &filtered_3 {
+                        filter(word_3, &filtered_3, &mut filtered_4);
+                        for word_4 in &filtered_4 {
+                            result.push([
+                                word_0.1, word_1.1, word_2.1, word_3.1,
+                                word_4.1,
+                            ]);
+                        }
+                    }
+                }
+            }
+            result
+        })
+        .collect();
+
+    for solution_indices in solution_bits {
+        print_solution(&solution_indices, &global_data);
+    }
+}
+
+fn filter(&(index, bits): &Word, src: &Vec<Word>, dest: &mut Vec<Word>) {
+    dest.clear();
+    dest.extend(
+        src.iter()
+            .skip_while(|(index_iter, _val)| *index_iter <= index)
+            .filter(|(_index, val)| *val & bits == 0),
     );
+}
 
-    for solution_indices in output {
-        let solution = global_data.solution_indicies_to_str(&solution_indices);
-        for (index, word) in solution.iter().enumerate() {
-            if index == solution.len() - 1 {
-                println!("{}", word);
+fn print_solution(solution_indices: &SolutionBits, global_data: &GlobalData) {
+    let solutions = global_data.solution_indicies_to_strs(&solution_indices);
+    for words in &solutions {
+        for i in 0..words.len() {
+            if i == words.len() - 1 {
+                println!("{}", words[i]);
             } else {
-                print!("{} ", word);
+                print!("{} ", words[i]);
             }
         }
-    }
-}
-
-fn print_solution(
-    solution_indices: &SolutionIndices,
-    global_data: &GlobalData,
-) {
-    let solution = global_data.solution_indicies_to_str(solution_indices);
-    for (index, word) in solution.iter().enumerate() {
-        if index == solution.len() - 1 {
-            println!("{}", word);
-        } else {
-            print!("{} ", word);
-        }
-    }
-}
-
-fn winnow(
-    global_data: &mut GlobalData,
-    current_solution: &mut SolutionIndices,
-    depth: usize,
-    output: &mut Vec<SolutionIndices>,
-) {
-    let mut cursor = global_data.word_bits.first_index;
-    while let Some(cursor_index) = cursor {
-        let cursor_bits = global_data.word_bits.items[cursor_index];
-        current_solution[depth] = cursor_index;
-        cursor = global_data.word_bits.next_indices[cursor_index];
-        if depth == 4 {
-            output.push(current_solution.clone());
-            print_solution(current_solution, global_data);
-            continue;
-        }
-        // global_data.filter_data(|word_bits, index| {
-        //     (index > cursor_index) && (word_bits & cursor_bits == 0)
-        // });
-        global_data.filter_bkp(cursor_index, cursor_bits);
-        winnow(global_data, current_solution, depth + 1, output);
-        global_data.undo_last_filter();
     }
 }
